@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  arangodb:
+    image: arangodb:3.12
+    container_name: arangodb-timetrack
+    restart: unless-stopped
+    ports:
+      - "8529:8529"
+    environment:
+      ARANGO_ROOT_PASSWORD: changeme
+      ARANGO_NO_AUTH: "false"
+    volumes:
+      - arango-data:/var/lib/arangodb3
+      - ./arangodb-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8529/_api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: dragonfly-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: dragonfly --requirepass changeme --bind 0.0.0.0
+    ulimits:
+      memlock: -1
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  arango-data:

@@ -1,5 +1,7 @@
-import { Component, For, Show, createSignal, createEffect } from 'solid-js'
+import { Component, For, Show, createSignal } from 'solid-js'
+import { createQuery, createMutation } from '@tanstack/solid-query'
 import { useAuth } from '../context/AuthContext'
+import { useApiClient } from '../lib/apiClient'
 import styles from './TaskBoard.module.css'
 
 interface TaskItem {
@@ -16,54 +18,60 @@ interface TaskItem {
 
 export const TaskBoard: Component = () => {
   const { auth } = useAuth()
-  const [tasks, setTasks] = createSignal<TaskItem[]>([])
+  const api = useApiClient()
+
   const [view, setView] = createSignal<'board' | 'list' | 'calendar'>('board')
   const [projectId, setProjectId] = createSignal<string>('')
-  const [projects, setProjects] = createSignal<any[]>([])
 
-  // Fetch projects
-  createEffect(async () => {
-    if (!auth.isAuthenticated) return
-
-    try {
-      const response = await fetch('/api/projects', {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-      })
-      const data = await response.json()
-      if (data.success) {
-        setProjects(data.data)
-        if (data.data.length > 0) {
+  // Fetch projects with TanStack Query
+  const projectsQuery = createQuery(() => ({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      try {
+        const data = await api.get<{ success: boolean; data: any[] }>('/api/projects')
+        if (data.data && data.data.length > 0) {
           setProjectId(data.data[0]._key)
         }
+        return data.data || []
+      } catch (error) {
+        console.error('Error fetching projects:', error)
+        return []
       }
-    } catch (error) {
-      console.error('Error fetching projects:', error)
-    }
-  })
+    },
+    enabled: auth.isAuthenticated,
+  }))
 
-  // Fetch tasks for selected project
-  createEffect(async () => {
-    if (!projectId() || !auth.isAuthenticated) return
-
-    try {
-      const response = await fetch(`/api/tasks?projectId=${projectId()}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-      })
-      const data = await response.json()
-      if (data.success) {
-        setTasks(data.data)
+  // Fetch tasks for selected project with TanStack Query
+  const tasksQuery = createQuery(() => ({
+    queryKey: ['tasks', projectId()],
+    queryFn: async () => {
+      try {
+        const params = projectId() ? `?projectId=${projectId()}` : ''
+        const data = await api.get<{ success: boolean; data: TaskItem[] }>(`/api/tasks${params}`)
+        return data.data || []
+      } catch (error) {
+        console.error('Error fetching tasks:', error)
+        return []
       }
-    } catch (error) {
-      console.error('Error fetching tasks:', error)
-    }
-  })
+    },
+    enabled: auth.isAuthenticated && !!projectId(),
+  }))
+
+  // Mutation for updating task status
+  const updateTaskMutation = createMutation(() => ({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
+      return api.patch(`/api/tasks/${taskId}`, { status })
+    },
+    onSuccess: () => {
+      tasksQuery.refetch()
+    },
+    onError: (error: any) => {
+      alert(`Error updating task: ${error.message}`)
+    },
+  }))
 
   const tasksByStatus = () => {
-    const all = tasks()
+    const all = tasksQuery.data || []
     return {
       todo: all.filter((t) => t.status === 'todo'),
       in_progress: all.filter((t) => t.status === 'in_progress'),
@@ -95,8 +103,10 @@ export const TaskBoard: Component = () => {
             onChange={(e) => setProjectId(e.currentTarget.value)}
             class={styles.select}
           >
-            <option value="">Select Project</option>
-            {projects().map((p) => (
+            <option value="">
+              {projectsQuery.isLoading ? 'Loading...' : 'Select Project'}
+            </option>
+            {projectsQuery.data?.map((p) => (
               <option value={p._key}>{p.name}</option>
             ))}
           </select>

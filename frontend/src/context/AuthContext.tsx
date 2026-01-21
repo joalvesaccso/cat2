@@ -49,13 +49,13 @@ export const AuthProvider: ParentComponent = (props) => {
       const data = await response.json()
 
       if (data.success) {
-        const { token, user } = data.data
+        const { token, user } = data
         setAuth({
           userId: user.id,
           username: user.username,
           email: user.email,
-          department: user.department,
-          roles: user.roles,
+          department: user.department || '',
+          roles: user.roles || [],
           token,
           isAuthenticated: true,
         })

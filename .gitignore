@@ -40,3 +40,7 @@ yarn-error.log*
 **/*.log
 package-lock.json
 **/*.bun
+# Node modules (large and should not be committed)
+backend/node_modules/
+frontend/node_modules/
+node_modules/

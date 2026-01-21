@@ -1,6 +1,13 @@
-import { createSignal, createEffect, Show, Component } from 'solid-js'
+import { createSignal, createEffect, Show, Component, onCleanup } from 'solid-js'
+import { createQuery, createMutation } from '@tanstack/solid-query'
 import { useAuth } from '../context/AuthContext'
+import { useApiClient } from '../lib/apiClient'
 import styles from './Timer.module.css'
+
+interface Project {
+  _key: string
+  name: string
+}
 
 interface TimerState {
   isRunning: boolean
@@ -14,6 +21,8 @@ interface TimerState {
 
 export const Timer: Component = () => {
   const { auth } = useAuth()
+  const api = useApiClient()
+
   const [timer, setTimer] = createSignal<TimerState>({
     isRunning: false,
     elapsedSeconds: 0,
@@ -22,37 +31,52 @@ export const Timer: Component = () => {
     billable: false,
     tags: [],
   })
-  const [projects, setProjects] = createSignal<any[]>([])
 
-  // Fetch projects
-  createEffect(async () => {
-    if (!auth.isAuthenticated) return
-
-    try {
-      const response = await fetch('/api/projects', {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-      })
-      const data = await response.json()
-      if (data.success) {
-        setProjects(data.data)
+  // Fetch projects with TanStack Query
+  const projectsQuery = createQuery(() => ({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      try {
+        const data = await api.get<{ success: boolean; data: Project[] }>('/api/projects')
+        return data.data || []
+      } catch (error) {
+        console.error('Error fetching projects:', error)
+        return []
       }
-    } catch (error) {
-      console.error('Error fetching projects:', error)
-    }
-  })
+    },
+    enabled: auth.isAuthenticated,
+  }))
+
+  // Mutation for saving time log
+  const createTimeLogMutation = createMutation(() => ({
+    mutationFn: async (data: any) => {
+      return api.post('/api/time/logs', data)
+    },
+    onSuccess: () => {
+      alert('Time logged successfully!')
+      setTimer({
+        isRunning: false,
+        elapsedSeconds: 0,
+        projectId: '',
+        description: '',
+        billable: false,
+        tags: [],
+      })
+    },
+    onError: (error: any) => {
+      alert(`Error: ${error.message}`)
+    },
+  }))
 
   // Timer interval
-  let intervalId: number | undefined
   createEffect(() => {
-    if (timer().isRunning) {
-      intervalId = setInterval(() => {
-        setTimer('elapsedSeconds', (s) => s + 1)
-      }, 1000)
-    } else {
-      if (intervalId) clearInterval(intervalId)
-    }
+    if (!timer().isRunning) return
+
+    const intervalId = setInterval(() => {
+      setTimer('elapsedSeconds', (s) => s + 1)
+    }, 1000)
+
+    onCleanup(() => clearInterval(intervalId))
   })
 
   const toggleTimer = () => {
@@ -68,40 +92,17 @@ export const Timer: Component = () => {
       return
     }
 
-    try {
-      const response = await fetch('/api/time/logs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        body: JSON.stringify({
-          projectId: currentTimer.projectId,
-          taskId: currentTimer.taskId,
-          description: currentTimer.description,
-          startTime: new Date(Date.now() - currentTimer.elapsedSeconds * 1000).toISOString(),
-          endTime: new Date().toISOString(),
-          duration: currentTimer.elapsedSeconds,
-          type: 'work',
-          billable: currentTimer.billable,
-          tags: currentTimer.tags,
-        }),
-      })
-
-      if (response.ok) {
-        alert('Time logged successfully!')
-        setTimer({
-          isRunning: false,
-          elapsedSeconds: 0,
-          projectId: '',
-          description: '',
-          billable: false,
-          tags: [],
-        })
-      }
-    } catch (error) {
-      console.error('Error saving time log:', error)
-    }
+    createTimeLogMutation.mutate({
+      projectId: currentTimer.projectId,
+      taskId: currentTimer.taskId,
+      description: currentTimer.description,
+      startTime: new Date(Date.now() - currentTimer.elapsedSeconds * 1000).toISOString(),
+      endTime: new Date().toISOString(),
+      duration: currentTimer.elapsedSeconds,
+      type: 'work',
+      billable: currentTimer.billable,
+      tags: currentTimer.tags,
+    })
   }
 
   const formatTime = (seconds: number) => {
@@ -131,8 +132,10 @@ export const Timer: Component = () => {
           onChange={(e) => setTimer('projectId', e.currentTarget.value)}
           class={styles.select}
         >
-          <option value="">Select Project</option>
-          {projects().map((p) => (
+          <option value="">
+            {projectsQuery.isLoading ? 'Loading projects...' : 'Select Project'}
+          </option>
+          {projectsQuery.data?.map((p) => (
             <option value={p._key}>{p.name}</option>
           ))}
         </select>
@@ -151,8 +154,12 @@ export const Timer: Component = () => {
         <button onClick={toggleTimer} class={`${styles.btn} ${styles.btnPrimary}`}>
           {timer().isRunning ? '⏸ Pause' : '▶ Start'}
         </button>
-        <button onClick={stopAndSave} class={`${styles.btn} ${styles.btnSuccess}`} disabled={!timer().isRunning}>
-          ✓ Stop & Save
+        <button
+          onClick={stopAndSave}
+          class={`${styles.btn} ${styles.btnSuccess}`}
+          disabled={!timer().isRunning || createTimeLogMutation.isPending}
+        >
+          {createTimeLogMutation.isPending ? '💾 Saving...' : '✓ Stop & Save'}
         </button>
         <button
           onClick={() => setTimer('elapsedSeconds', 0)}

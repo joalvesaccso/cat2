@@ -72,6 +72,13 @@
   border-radius: 8px;
   padding: 12px;
   min-height: 600px;
+  transition: all 0.2s ease;
+}
+
+.column.dragOver {
+  background: #e6f2ff;
+  border: 2px dashed #667eea;
+  box-shadow: 0 0 8px rgba(102, 126, 234, 0.2);
 }
 
 .columnHeader {
@@ -117,12 +124,19 @@
   padding: 12px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
   transition: all 0.2s ease;
-  cursor: pointer;
+  cursor: grab;
 }
 
 .card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   transform: translateY(-2px);
+}
+
+.card.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+  transform: rotate(2deg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .card h4 {

@@ -26,6 +26,8 @@ export const TaskBoard: Component = () => {
   const [projectId, setProjectId] = createSignal<string>('')
   const [error, setError] = createSignal<string | null>(null)
   const [showErrorModal, setShowErrorModal] = createSignal(false)
+  const [draggedTask, setDraggedTask] = createSignal<TaskItem | null>(null)
+  const [dragOverStatus, setDragOverStatus] = createSignal<string | null>(null)
 
   // Fetch projects with TanStack Query
   const projectsQuery = createQuery(() => ({
@@ -77,6 +79,41 @@ export const TaskBoard: Component = () => {
       setShowErrorModal(true)
     },
   }))
+
+  // Drag handlers for kanban board
+  const handleDragStart = (task: TaskItem) => {
+    setDraggedTask(task)
+  }
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault()
+  }
+
+  const handleDragEnter = (status: string, e: DragEvent) => {
+    e.preventDefault()
+    setDragOverStatus(status)
+  }
+
+  const handleDragLeave = (e: DragEvent) => {
+    // Only set to null if we're leaving the entire column
+    const relatedTarget = e.relatedTarget as HTMLElement
+    if (!relatedTarget || !relatedTarget.closest('[data-column]')) {
+      setDragOverStatus(null)
+    }
+  }
+
+  const handleDrop = (status: string, e: DragEvent) => {
+    e.preventDefault()
+    const task = draggedTask()
+    
+    if (task && task.status !== status) {
+      // Update the task status
+      updateTaskMutation.mutate({ taskId: task._key, status })
+    }
+    
+    setDraggedTask(null)
+    setDragOverStatus(null)
+  }
 
   const tasksByStatus = () => {
     const all = tasksQuery.data || []
@@ -148,7 +185,14 @@ export const TaskBoard: Component = () => {
           {(
             ['todo', 'in_progress', 'review', 'done'] as const
           ).map((status) => (
-            <div class={styles.column}>
+            <div 
+              class={`${styles.column} ${dragOverStatus() === status ? styles.dragOver : ''}`}
+              data-column={status}
+              onDragOver={handleDragOver}
+              onDragEnter={(e) => handleDragEnter(status, e)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(status, e)}
+            >
               <div class={styles.columnHeader}>
                 <h3>{status.replace('_', ' ').toUpperCase()}</h3>
                 <span class={styles.badge}>{tasksByStatus()[status].length}</span>
@@ -158,9 +202,12 @@ export const TaskBoard: Component = () => {
                 <For each={tasksByStatus()[status]}>
                   {(task) => (
                     <div
-                      class={styles.card}
+                      class={`${styles.card} ${draggedTask()?._key === task._key ? styles.dragging : ''}`}
+                      draggable={true}
+                      onDragStart={() => handleDragStart(task)}
                       style={{
                         'border-left': `4px solid ${priorityColor(task.priority)}`,
+                        'cursor': 'grab',
                       }}
                     >
                       <h4>{task.name}</h4>

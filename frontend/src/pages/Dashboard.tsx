@@ -3,9 +3,10 @@ import { useAuth } from '../context/AuthContext'
 import { Timer } from '../components/Timer'
 import { TaskBoard } from '../components/TaskBoard'
 import { TimeLog } from '../components/TimeLog'
+import { Analytics } from './Analytics'
 import styles from './Dashboard.module.css'
 
-type TabType = 'timer' | 'tasks' | 'logs' | 'expenses' | 'settings'
+type TabType = 'timer' | 'tasks' | 'logs' | 'analytics' | 'expenses' | 'settings'
 
 export const Dashboard: Component = () => {
   const { auth, logout } = useAuth()
@@ -53,6 +54,12 @@ export const Dashboard: Component = () => {
             📋 Time Logs
           </button>
           <button
+            onClick={() => setActiveTab('analytics')}
+            class={`${styles.navItem} ${activeTab() === 'analytics' ? styles.active : ''}`}
+          >
+            📊 Analytics
+          </button>
+          <button
             onClick={() => setActiveTab('expenses')}
             class={`${styles.navItem} ${activeTab() === 'expenses' ? styles.active : ''}`}
           >
@@ -93,6 +100,7 @@ export const Dashboard: Component = () => {
           <h1>{activeTab() === 'timer' && '⏱️ Timer'}</h1>
           <h1>{activeTab() === 'tasks' && '📊 Tasks & Planning'}</h1>
           <h1>{activeTab() === 'logs' && '📋 Time Logs'}</h1>
+          <h1>{activeTab() === 'analytics' && '📊 Analytics & Reporting'}</h1>
           <h1>{activeTab() === 'expenses' && '💰 Expenses'}</h1>
           <h1>{activeTab() === 'settings' && '⚙️ Settings'}</h1>
           <div class={styles.topBarSpacer} />
@@ -109,6 +117,10 @@ export const Dashboard: Component = () => {
 
           <Show when={activeTab() === 'logs'}>
             <TimeLog />
+          </Show>
+
+          <Show when={activeTab() === 'analytics'}>
+            <Analytics />
           </Show>
 
           <Show when={activeTab() === 'expenses'}>

@@ -403,6 +403,194 @@ const app = new Elysia()
     }
   })
 
+  // Analytics: Get project statistics
+  .get('/api/analytics/projects', async ({ headers }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+      const projectsCollection = appDb.collection('projects')
+      const tasksCollection = appDb.collection('tasks')
+      const timeLogsCollection = appDb.collection('time_logs')
+
+      // Get all projects
+      const projectsCursor = await appDb.query(
+        'FOR p IN projects RETURN { id: p._key, name: p.name, status: p.status, createdAt: p.createdAt }'
+      )
+      const projects = await projectsCursor.all()
+
+      // Get stats for each project
+      const projectStats = await Promise.all(
+        projects.map(async (p: any) => {
+          // Count tasks by status
+          const tasksCursor = await appDb.query(
+            `FOR t IN tasks FILTER t.projectId == @projectId 
+             COLLECT status = t.status WITH COUNT INTO cnt 
+             RETURN { status, count: cnt }`,
+            { projectId: p.id }
+          )
+          const tasksByStatus = await tasksCursor.all()
+
+          // Sum time logs for project
+          const timeCursor = await appDb.query(
+            `FOR t IN time_logs FILTER t.projectId == @projectId 
+             RETURN SUM(t.duration)`,
+            { projectId: p.id }
+          )
+          const timeResult = await timeCursor.all()
+          const totalTime = timeResult[0] || 0
+
+          return {
+            id: p.id,
+            name: p.name,
+            status: p.status,
+            createdAt: p.createdAt,
+            tasksByStatus: Object.fromEntries(
+              tasksByStatus.map((s: any) => [s.status, s.count])
+            ),
+            totalTimeLogged: totalTime,
+            totalHours: Math.round((totalTime / 3600) * 100) / 100,
+          }
+        })
+      )
+
+      return { success: true, data: projectStats }
+    } catch (error) {
+      console.error('Analytics projects error:', error)
+      return { success: false, error: 'Failed to fetch analytics', status: 500 }
+    }
+  })
+
+  // Analytics: Get time tracking summary
+  .get('/api/analytics/time', async ({ headers, query }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+      const { projectId, period = '7' } = query as {
+        projectId?: string
+        period?: string
+      }
+
+      const daysBack = parseInt(period) || 7
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - daysBack)
+
+      // Get time logs for period
+      const query_str = projectId
+        ? `FOR t IN time_logs 
+           FILTER t.projectId == @projectId AND t.createdAt >= @startDate 
+           RETURN { date: DATE_FORMAT(t.createdAt, '%Y-%m-%d'), duration: t.duration, activity: t.activity }`
+        : `FOR t IN time_logs 
+           FILTER t.createdAt >= @startDate 
+           RETURN { date: DATE_FORMAT(t.createdAt, '%Y-%m-%d'), duration: t.duration, activity: t.activity }`
+
+      const cursor = await appDb.query(query_str, {
+        projectId,
+        startDate: startDate.toISOString(),
+      })
+      const logs = await cursor.all()
+
+      // Group by date and activity
+      const byDate: Record<string, number> = {}
+      const byActivity: Record<string, number> = {}
+
+      logs.forEach((log: any) => {
+        byDate[log.date] = (byDate[log.date] || 0) + log.duration
+        byActivity[log.activity] = (byActivity[log.activity] || 0) + log.duration
+      })
+
+      const totalDuration = Object.values(byDate).reduce((a: number, b: number) => a + b, 0)
+
+      return {
+        success: true,
+        data: {
+          period: daysBack,
+          totalSeconds: totalDuration,
+          totalHours: Math.round((totalDuration / 3600) * 100) / 100,
+          averagePerDay: Math.round((totalDuration / daysBack / 3600) * 100) / 100,
+          byDate,
+          byActivity: Object.fromEntries(
+            Object.entries(byActivity)
+              .map(([activity, duration]: [string, any]) => [
+                activity,
+                Math.round((duration / 3600) * 100) / 100,
+              ])
+              .sort(([, a]: [string, number], [, b]: [string, number]) => b - a)
+          ),
+        },
+      }
+    } catch (error) {
+      console.error('Analytics time error:', error)
+      return { success: false, error: 'Failed to fetch time analytics', status: 500 }
+    }
+  })
+
+  // Analytics: Get task completion metrics
+  .get('/api/analytics/tasks', async ({ headers, query }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+      const { projectId } = query as { projectId?: string }
+
+      const query_str = projectId
+        ? `FOR t IN tasks FILTER t.projectId == @projectId 
+           COLLECT status = t.status, priority = t.priority WITH COUNT INTO cnt 
+           RETURN { status, priority, count: cnt }`
+        : `FOR t IN tasks 
+           COLLECT status = t.status, priority = t.priority WITH COUNT INTO cnt 
+           RETURN { status, priority, count: cnt }`
+
+      const cursor = await appDb.query(query_str, { projectId })
+      const taskStats = await cursor.all()
+
+      // Get total and completion rate
+      const totalQuery = projectId
+        ? `FOR t IN tasks FILTER t.projectId == @projectId RETURN COUNT(t)`
+        : `FOR t IN tasks RETURN COUNT(t)`
+
+      const totalCursor = await appDb.query(totalQuery, { projectId })
+      const [totalTasks] = await totalCursor.all()
+
+      const completedTasks = taskStats
+        .filter((s: any) => s.status === 'done')
+        .reduce((sum: number, s: any) => sum + s.count, 0)
+
+      return {
+        success: true,
+        data: {
+          total: totalTasks,
+          completed: completedTasks,
+          completionRate: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+          byStatus: Object.fromEntries(
+            taskStats
+              .filter((s: any) => s.priority === null) // Get only status grouping
+              .map((s: any) => [s.status, s.count])
+          ),
+          byPriority: Object.fromEntries(
+            taskStats
+              .filter((s: any) => s.status === null) // Get only priority grouping
+              .map((s: any) => [s.priority, s.count])
+          ),
+          details: taskStats,
+        },
+      }
+    } catch (error) {
+      console.error('Analytics tasks error:', error)
+      return { success: false, error: 'Failed to fetch task analytics', status: 500 }
+    }
+  })
+
   .listen(3000)
 
 console.log(`🦊 Backend running at http://localhost:3000`)

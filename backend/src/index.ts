@@ -119,6 +119,71 @@ const app = new Elysia()
     }
   })
 
+  // Token refresh endpoint
+  .post('/auth/refresh', async ({ body }) => {
+    try {
+      const { token } = body as { token: string }
+
+      if (!token) {
+        return {
+          success: false,
+          error: 'Token is required',
+          status: 400,
+        }
+      }
+
+      // Decode token
+      const decodedToken = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'))
+
+      // Get user from database
+      const appDb = db.database('timeprojectdb')
+      const query = `FOR u IN users FILTER u._key == @userId RETURN u`
+      const cursor = await appDb.query(query, { userId: decodedToken.sub })
+      const users = await cursor.all()
+
+      if (users.length === 0) {
+        return {
+          success: false,
+          error: 'User not found',
+          status: 401,
+        }
+      }
+
+      const user = users[0] as any
+
+      // Generate new token
+      const newToken = Buffer.from(
+        JSON.stringify({
+          sub: user._key,
+          email: user.email,
+          username: user.username,
+          type: user.type,
+          iat: Date.now(),
+          exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+        })
+      ).toString('base64')
+
+      return {
+        success: true,
+        token: newToken,
+        user: {
+          id: user._key,
+          email: user.email,
+          username: user.username,
+          type: user.type,
+          department: user.department,
+        },
+      }
+    } catch (error) {
+      console.error('Token refresh error:', error)
+      return {
+        success: false,
+        error: 'Token refresh failed',
+        status: 401,
+      }
+    }
+  })
+
   // Get all projects for the authenticated user
   .get('/api/projects', async ({ headers }) => {
     try {

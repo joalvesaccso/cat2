@@ -2,6 +2,8 @@ import { Component, For, Show, createSignal } from 'solid-js'
 import { createQuery, createMutation } from '@tanstack/solid-query'
 import { useAuth } from '../context/AuthContext'
 import { useApiClient } from '../lib/apiClient'
+import { ErrorModal } from './ErrorModal'
+import { taskStatusSchema } from '../lib/validation'
 import styles from './TaskBoard.module.css'
 
 interface TaskItem {
@@ -22,6 +24,8 @@ export const TaskBoard: Component = () => {
 
   const [view, setView] = createSignal<'board' | 'list' | 'calendar'>('board')
   const [projectId, setProjectId] = createSignal<string>('')
+  const [error, setError] = createSignal<string | null>(null)
+  const [showErrorModal, setShowErrorModal] = createSignal(false)
 
   // Fetch projects with TanStack Query
   const projectsQuery = createQuery(() => ({
@@ -57,16 +61,20 @@ export const TaskBoard: Component = () => {
     enabled: auth.isAuthenticated && !!projectId(),
   }))
 
-  // Mutation for updating task status
+  // Mutation for updating task status with validation
   const updateTaskMutation = createMutation(() => ({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return api.patch(`/api/tasks/${taskId}`, { status })
+      // Validate status
+      const validatedData = taskStatusSchema.parse({ status })
+      return api.patch(`/api/tasks/${taskId}`, validatedData)
     },
     onSuccess: () => {
       tasksQuery.refetch()
     },
     onError: (error: any) => {
-      alert(`Error updating task: ${error.message}`)
+      const errorMsg = error instanceof Error ? error.message : 'Failed to update task'
+      setError(errorMsg)
+      setShowErrorModal(true)
     },
   }))
 
@@ -211,6 +219,13 @@ export const TaskBoard: Component = () => {
           </table>
         </div>
       </Show>
+
+      <ErrorModal
+        isOpen={showErrorModal()}
+        title="TaskBoard Error"
+        message={error() || 'An error occurred'}
+        onClose={() => setShowErrorModal(false)}
+      />
     </div>
   )
 }

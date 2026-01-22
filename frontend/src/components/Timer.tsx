@@ -2,6 +2,8 @@ import { createSignal, createEffect, Show, Component, onCleanup } from 'solid-js
 import { createQuery, createMutation } from '@tanstack/solid-query'
 import { useAuth } from '../context/AuthContext'
 import { useApiClient } from '../lib/apiClient'
+import { ErrorModal } from './ErrorModal'
+import { timeLogSchema } from '../lib/validation'
 import styles from './Timer.module.css'
 
 interface Project {
@@ -32,6 +34,9 @@ export const Timer: Component = () => {
     tags: [],
   })
 
+  const [error, setError] = createSignal<string | null>(null)
+  const [showErrorModal, setShowErrorModal] = createSignal(false)
+
   // Fetch projects with TanStack Query
   const projectsQuery = createQuery(() => ({
     queryKey: ['projects'],
@@ -53,7 +58,6 @@ export const Timer: Component = () => {
       return api.post('/api/time/logs', data)
     },
     onSuccess: () => {
-      alert('Time logged successfully!')
       setTimer({
         isRunning: false,
         elapsedSeconds: 0,
@@ -64,7 +68,9 @@ export const Timer: Component = () => {
       })
     },
     onError: (error: any) => {
-      alert(`Error: ${error.message}`)
+      const errorMsg = error instanceof Error ? error.message : 'Failed to save time log'
+      setError(errorMsg)
+      setShowErrorModal(true)
     },
   }))
 
@@ -86,23 +92,32 @@ export const Timer: Component = () => {
   const stopAndSave = async () => {
     const currentTimer = timer()
     setTimer('isRunning', false)
+    setError(null)
 
-    if (!currentTimer.projectId || !currentTimer.description) {
-      alert('Please select a project and add a description')
-      return
+    // Validate with Zod before saving
+    try {
+      const validatedData = timeLogSchema.parse({
+        projectId: currentTimer.projectId,
+        taskId: currentTimer.taskId,
+        description: currentTimer.description,
+        hours: Math.floor(currentTimer.elapsedSeconds / 3600),
+        minutes: Math.floor((currentTimer.elapsedSeconds % 3600) / 60),
+      })
+
+      createTimeLogMutation.mutate({
+        ...validatedData,
+        startTime: new Date(Date.now() - currentTimer.elapsedSeconds * 1000).toISOString(),
+        endTime: new Date().toISOString(),
+        duration: currentTimer.elapsedSeconds,
+        type: 'work',
+        billable: currentTimer.billable,
+        tags: currentTimer.tags,
+      })
+    } catch (err: any) {
+      const errorMsg = err.errors?.[0]?.message || 'Validation failed'
+      setError(errorMsg)
+      setShowErrorModal(true)
     }
-
-    createTimeLogMutation.mutate({
-      projectId: currentTimer.projectId,
-      taskId: currentTimer.taskId,
-      description: currentTimer.description,
-      startTime: new Date(Date.now() - currentTimer.elapsedSeconds * 1000).toISOString(),
-      endTime: new Date().toISOString(),
-      duration: currentTimer.elapsedSeconds,
-      type: 'work',
-      billable: currentTimer.billable,
-      tags: currentTimer.tags,
-    })
   }
 
   const formatTime = (seconds: number) => {
@@ -157,7 +172,7 @@ export const Timer: Component = () => {
         <button
           onClick={stopAndSave}
           class={`${styles.btn} ${styles.btnSuccess}`}
-          disabled={!timer().isRunning || createTimeLogMutation.isPending}
+          disabled={createTimeLogMutation.isPending}
         >
           {createTimeLogMutation.isPending ? '💾 Saving...' : '✓ Stop & Save'}
         </button>
@@ -168,6 +183,13 @@ export const Timer: Component = () => {
           ↺ Reset
         </button>
       </div>
+
+      <ErrorModal
+        isOpen={showErrorModal()}
+        title="Timer Error"
+        message={error() || 'An error occurred'}
+        onClose={() => setShowErrorModal(false)}
+      />
     </div>
   )
 }

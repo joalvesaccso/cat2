@@ -1,6 +1,8 @@
 import { Component, createSignal } from 'solid-js'
 import { useNavigate } from '@solidjs/router'
 import { useAuth } from '../context/AuthContext'
+import { ErrorModal } from '../components/ErrorModal'
+import { loginSchema, getValidationError } from '../lib/validation'
 import styles from './Login.module.css'
 
 export const Login: Component = () => {
@@ -10,21 +12,45 @@ export const Login: Component = () => {
   const [email, setEmail] = createSignal('')
   const [password, setPassword] = createSignal('')
   const [error, setError] = createSignal<string | null>(null)
+  const [showErrorModal, setShowErrorModal] = createSignal(false)
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({})
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
     setError(null)
+    setFieldErrors({})
 
-    if (!email() || !password()) {
-      setError('Please enter both email and password')
-      return
-    }
-
+    // Validate input with Zod
     try {
-      await login(email(), password())
+      const validatedData = loginSchema.parse({
+        email: email(),
+        password: password(),
+      })
+
+      await login(validatedData.email, validatedData.password)
       navigate('/', { replace: true })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+    } catch (err: any) {
+      if (err.errors && err.errors[0]) {
+        // Zod validation error
+        const errorMessage = getValidationError(err)
+        setError(errorMessage)
+        setShowErrorModal(true)
+
+        // Set field-specific errors
+        const fieldErrs: Record<string, string> = {}
+        err.errors.forEach((error: any) => {
+          const fieldName = error.path?.[0]
+          if (fieldName) {
+            fieldErrs[fieldName] = error.message
+          }
+        })
+        setFieldErrors(fieldErrs)
+      } else {
+        // Login error
+        const errorMessage = err instanceof Error ? err.message : 'Login failed'
+        setError(errorMessage)
+        setShowErrorModal(true)
+      }
     }
   }
 
@@ -45,9 +71,12 @@ export const Login: Component = () => {
               placeholder="you@example.com"
               value={email()}
               onInput={(e) => setEmail(e.currentTarget.value)}
-              class={styles.input}
+              class={`${styles.input} ${fieldErrors().email ? styles.inputError : ''}`}
               disabled={auth.isLoading}
             />
+            {fieldErrors().email && (
+              <span class={styles.fieldError}>{fieldErrors().email}</span>
+            )}
           </div>
 
           <div class={styles.formGroup}>
@@ -58,12 +87,13 @@ export const Login: Component = () => {
               placeholder="••••••••"
               value={password()}
               onInput={(e) => setPassword(e.currentTarget.value)}
-              class={styles.input}
+              class={`${styles.input} ${fieldErrors().password ? styles.inputError : ''}`}
               disabled={auth.isLoading}
             />
+            {fieldErrors().password && (
+              <span class={styles.fieldError}>{fieldErrors().password}</span>
+            )}
           </div>
-
-          {error() && <div class={styles.error}>{error()}</div>}
 
           <button type="submit" class={styles.button} disabled={auth.isLoading}>
             {auth.isLoading ? 'Signing in...' : 'Sign In'}
@@ -72,12 +102,19 @@ export const Login: Component = () => {
 
         <div class={styles.footer}>
           <p>Demo Credentials:</p>
-          <code>user@example.com / password123</code>
+          <code>admin@example.com / admin123</code>
           <p class={styles.disclaimer}>
             💡 In production, this will use Microsoft Entra ID (Azure AD) SSO with Microsoft Authenticator MFA.
           </p>
         </div>
       </div>
+
+      <ErrorModal
+        isOpen={showErrorModal()}
+        title="Login Error"
+        message={error() || 'An error occurred'}
+        onClose={() => setShowErrorModal(false)}
+      />
     </div>
   )
 }

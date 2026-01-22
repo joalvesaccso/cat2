@@ -1,9 +1,9 @@
 # Current Project State - Zeit- & Projektmanagementsystem
 
-**Last Updated:** 22. Januar 2026, 17:00 UTC
+**Last Updated:** 22. Januar 2026, 17:15 UTC
 
 ## Current Phase
-**Phase 3: Form Validation & Error Handling** (85% complete)
+**Phase 3: Form Validation & Error Handling** (95% complete)
 
 ## Current Plan
 
@@ -36,8 +36,17 @@
   - Token persistence in localStorage
   - Frontend builds successfully (133.28 KB / 41.90 KB gzipped)
 
-- ⏳ **Next Steps (Phase 3.3+):**
-  - Drag-and-drop task management
+- ✅ **Completed (3.3):**
+  - Native HTML5 drag-and-drop support in TaskBoard component
+  - Draggable task cards with grab cursor
+  - Drop zones with visual feedback (blue dashed border on hover)
+  - Dragged cards show reduced opacity and rotation
+  - Status updates automatically posted to `/api/tasks/:id` endpoint
+  - Auto-refetch tasks after successful drop
+  - Error handling with ErrorModal for failed updates
+  - Frontend builds successfully (134.13 KB / 42.34 KB gzipped)
+
+- ⏳ **Next Steps (Phase 4+):**
   - Advanced analytics & reporting
   - GDPR/data export endpoints
   - WebSocket real-time features
@@ -65,31 +74,24 @@ POST /auth/refresh → 200 OK (New token with fresh exp timestamp)
 ✓ localStorage token persistence working
 ```
 
-### 🔧 Recent Changes (Phase 3.2)
-- Added POST `/auth/refresh` endpoint to backend
-  - Decodes existing token from base64
-  - Validates user still exists in database
-  - Generates new token with updated iat/exp timestamps
-  - Returns { success, token, user } format
+### 🔧 Recent Changes (Phase 3.3)
+- Added native HTML5 drag-and-drop support to TaskBoard component
+- Implemented drag event handlers:
+  - `handleDragStart()` - Captures task being dragged
+  - `handleDragOver()` - Allows dropping
+  - `handleDragEnter()` - Shows drop zone feedback
+  - `handleDragLeave()` - Removes drop zone feedback
+  - `handleDrop()` - Updates task status and calls API
   
-- Updated AuthContext with token refresh logic
-  - `decodeToken()` - Parse base64-encoded JWT
-  - `isTokenExpired()` - Check if token has expired
-  - `getTimeUntilExpiration()` - Calculate refresh time
-  - `refreshToken()` - Async method to call /auth/refresh and update state
-  - `setupTokenRefresh()` - Setup auto-refresh timer (5 min before expiry)
-  - Auto-initialize from localStorage on app load
+- Enhanced TaskBoard CSS with drag-and-drop states:
+  - `.dragOver` - Blue background with dashed border and shadow
+  - `.dragging` - 50% opacity, 2° rotation, enhanced shadow
+  - Task cards show grab cursor during normal state
   
-- Enhanced apiClient with 401 interceptor
-  - Detects 401 responses from API
-  - Automatically calls refreshToken() when unauthorized
-  - Retries original request with new token
-  - Handles simultaneous refresh requests with promise queue
-  - Prevents cascading API errors during token expiration
-
-- Fixed API endpoint paths
-  - Changed from `/api/auth/...` to `/auth/...` to match backend
-  - Updated login, refresh, and logout endpoints
+- Integration with TanStack Query:
+  - Auto-refetch tasks after successful status update
+  - Mutation error handling with ErrorModal
+  - Real-time UI updates after drop
 
 ## Development Stack
 
@@ -108,11 +110,11 @@ POST /auth/refresh → 200 OK (New token with fresh exp timestamp)
 
 ## Repository
 - **GitHub:** https://github.com/joalvesaccso/cat2.git
-- **Last Commit:** Phase 3.2 (1a06247)
+- **Last Commit:** Phase 3.3 (0f970a7)
 - **Branch:** main
 
 ## Next Action
-Phase 3.3 - Implement drag-and-drop task management with SortableJS.
+Phase 4 - Implement advanced analytics, reporting, and GDPR features.
 
 ## Sample Credentials
 - **Email:** admin@example.com

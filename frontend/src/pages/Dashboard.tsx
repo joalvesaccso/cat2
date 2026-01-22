@@ -4,9 +4,10 @@ import { Timer } from '../components/Timer'
 import { TaskBoard } from '../components/TaskBoard'
 import { TimeLog } from '../components/TimeLog'
 import { Analytics } from './Analytics'
+import { GDPR } from './GDPR'
 import styles from './Dashboard.module.css'
 
-type TabType = 'timer' | 'tasks' | 'logs' | 'analytics' | 'expenses' | 'settings'
+type TabType = 'timer' | 'tasks' | 'logs' | 'analytics' | 'expenses' | 'gdpr'
 
 export const Dashboard: Component = () => {
   const { auth, logout } = useAuth()
@@ -66,10 +67,10 @@ export const Dashboard: Component = () => {
             💰 Expenses
           </button>
           <button
-            onClick={() => setActiveTab('settings')}
-            class={`${styles.navItem} ${activeTab() === 'settings' ? styles.active : ''}`}
+            onClick={() => setActiveTab('gdpr')}
+            class={`${styles.navItem} ${activeTab() === 'gdpr' ? styles.active : ''}`}
           >
-            ⚙️ Settings
+            🔒 Privacy
           </button>
         </nav>
 
@@ -102,7 +103,7 @@ export const Dashboard: Component = () => {
           <h1>{activeTab() === 'logs' && '📋 Time Logs'}</h1>
           <h1>{activeTab() === 'analytics' && '📊 Analytics & Reporting'}</h1>
           <h1>{activeTab() === 'expenses' && '💰 Expenses'}</h1>
-          <h1>{activeTab() === 'settings' && '⚙️ Settings'}</h1>
+          <h1>{activeTab() === 'gdpr' && '🔒 Privacy & GDPR'}</h1>
           <div class={styles.topBarSpacer} />
         </div>
 
@@ -130,11 +131,8 @@ export const Dashboard: Component = () => {
             </div>
           </Show>
 
-          <Show when={activeTab() === 'settings'}>
-            <div class={styles.placeholder}>
-              <h2>⚙️ Settings</h2>
-              <p>User settings & consent management coming soon...</p>
-            </div>
+          <Show when={activeTab() === 'gdpr'}>
+            <GDPR />
           </Show>
         </div>
       </main>

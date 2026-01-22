@@ -591,6 +591,248 @@ const app = new Elysia()
     }
   })
 
+  // GDPR: Export user data
+  .get('/api/gdpr/export', async ({ headers }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      // Decode token to get user ID
+      let userId = ''
+      try {
+        const decodedToken = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'))
+        userId = decodedToken.sub
+      } catch (error) {
+        return { success: false, error: 'Invalid token', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+
+      // Fetch user data
+      const userQuery = `FOR u IN users FILTER u._key == @userId RETURN u`
+      const userCursor = await appDb.query(userQuery, { userId })
+      const [userData] = await userCursor.all()
+
+      if (!userData) {
+        return { success: false, error: 'User not found', status: 404 }
+      }
+
+      // Fetch user's projects
+      const projectsQuery = `FOR p IN projects FILTER p.ownerId == @userId RETURN p`
+      const projectsCursor = await appDb.query(projectsQuery, { userId })
+      const projects = await projectsCursor.all()
+
+      // Fetch user's tasks
+      const tasksQuery = `FOR t IN tasks FILTER t.assigneeId == @userId RETURN t`
+      const tasksCursor = await appDb.query(tasksQuery, { userId })
+      const tasks = await tasksCursor.all()
+
+      // Fetch user's time logs
+      const timeLogsQuery = `FOR t IN time_logs FILTER t.userId == @userId RETURN t`
+      const timeLogsCursor = await appDb.query(timeLogsQuery, { userId })
+      const timeLogs = await timeLogsCursor.all()
+
+      // Compile all data
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        user: {
+          id: userData._key,
+          email: userData.email,
+          username: userData.username,
+          type: userData.type,
+          department: userData.department,
+          createdAt: userData.createdAt,
+        },
+        projects: projects.map((p: any) => ({
+          id: p._key,
+          name: p.name,
+          status: p.status,
+          description: p.description,
+          createdAt: p.createdAt,
+        })),
+        tasks: tasks.map((t: any) => ({
+          id: t._key,
+          name: t.name,
+          description: t.description,
+          status: t.status,
+          priority: t.priority,
+          projectId: t.projectId,
+          dueDate: t.dueDate,
+          createdAt: t.createdAt,
+          updatedAt: t.updatedAt,
+        })),
+        timeLogs: timeLogs.map((l: any) => ({
+          id: l._key,
+          activity: l.activity,
+          duration: l.duration,
+          projectId: l.projectId,
+          taskId: l.taskId,
+          billable: l.billable,
+          notes: l.notes,
+          createdAt: l.createdAt,
+        })),
+        statistics: {
+          totalProjects: projects.length,
+          totalTasks: tasks.length,
+          totalHoursLogged: Math.round(
+            (timeLogs.reduce((sum: number, l: any) => sum + (l.duration || 0), 0) / 3600) * 100
+          ) / 100,
+          averageDailyHours:
+            timeLogs.length > 0
+              ? Math.round(
+                  (timeLogs.reduce((sum: number, l: any) => sum + (l.duration || 0), 0) / 3600) *
+                    100
+                ) / 100 / 30
+              : 0,
+        },
+      }
+
+      return {
+        success: true,
+        data: exportData,
+      }
+    } catch (error) {
+      console.error('GDPR export error:', error)
+      return { success: false, error: 'Failed to export user data', status: 500 }
+    }
+  })
+
+  // GDPR: Delete user account and all associated data
+  .delete('/api/gdpr/delete', async ({ headers }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      // Decode token to get user ID
+      let userId = ''
+      try {
+        const decodedToken = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'))
+        userId = decodedToken.sub
+      } catch (error) {
+        return { success: false, error: 'Invalid token', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+
+      // Delete user's time logs
+      await appDb.query(`FOR t IN time_logs FILTER t.userId == @userId REMOVE t IN time_logs`, {
+        userId,
+      })
+
+      // Delete user's tasks
+      await appDb.query(`FOR t IN tasks FILTER t.assigneeId == @userId REMOVE t IN tasks`, {
+        userId,
+      })
+
+      // Delete user's projects
+      await appDb.query(`FOR p IN projects FILTER p.ownerId == @userId REMOVE p IN projects`, {
+        userId,
+      })
+
+      // Delete user account
+      await appDb.query(`FOR u IN users FILTER u._key == @userId REMOVE u IN users`, { userId })
+
+      return {
+        success: true,
+        message: 'User account and all associated data have been permanently deleted',
+        deletedAt: new Date().toISOString(),
+      }
+    } catch (error) {
+      console.error('GDPR deletion error:', error)
+      return { success: false, error: 'Failed to delete user account', status: 500 }
+    }
+  })
+
+  // GDPR: Get user consent preferences
+  .get('/api/gdpr/consent', async ({ headers }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      // Decode token to get user ID
+      let userId = ''
+      try {
+        const decodedToken = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'))
+        userId = decodedToken.sub
+      } catch (error) {
+        return { success: false, error: 'Invalid token', status: 401 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+
+      const consentQuery = `FOR u IN users FILTER u._key == @userId RETURN u.consents || {}`
+      const consentCursor = await appDb.query(consentQuery, { userId })
+      const [consents] = await consentCursor.all()
+
+      return {
+        success: true,
+        data: {
+          userId,
+          consents: consents || {
+            analytics: false,
+            marketing: false,
+            dataProcessing: false,
+          },
+          lastUpdated: new Date().toISOString(),
+        },
+      }
+    } catch (error) {
+      console.error('GDPR consent fetch error:', error)
+      return { success: false, error: 'Failed to fetch consent preferences', status: 500 }
+    }
+  })
+
+  // GDPR: Update user consent preferences
+  .patch('/api/gdpr/consent', async ({ headers, body }) => {
+    try {
+      const token = headers.authorization?.replace('Bearer ', '')
+      if (!token) {
+        return { success: false, error: 'Unauthorized', status: 401 }
+      }
+
+      // Decode token to get user ID
+      let userId = ''
+      try {
+        const decodedToken = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'))
+        userId = decodedToken.sub
+      } catch (error) {
+        return { success: false, error: 'Invalid token', status: 401 }
+      }
+
+      const { consents } = body as { consents: Record<string, boolean> }
+      if (!consents) {
+        return { success: false, error: 'consents object is required', status: 400 }
+      }
+
+      const appDb = db.database('timeprojectdb')
+
+      // Update user consents
+      await appDb.query(
+        `FOR u IN users FILTER u._key == @userId 
+         UPDATE u WITH { consents: @consents, consentUpdatedAt: @timestamp } IN users`,
+        { userId, consents, timestamp: new Date().toISOString() }
+      )
+
+      return {
+        success: true,
+        data: {
+          userId,
+          consents,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    } catch (error) {
+      console.error('GDPR consent update error:', error)
+      return { success: false, error: 'Failed to update consent preferences', status: 500 }
+    }
+  })
+
   .listen(3000)
 
 console.log(`🦊 Backend running at http://localhost:3000`)
